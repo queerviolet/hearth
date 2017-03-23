@@ -38,4 +38,32 @@ class Flame extends Valuable {
   update(...args) {
     this.ref$.then(ref => ref.update(...args))
   }
+}//--//--// Model metaprogramming magic //--//--//
+
+function model(fields) {
+  const props = Object.keys(fields)
+    .reduce(
+      (props, field) => Object.assign({}, props, {
+        [field]: {
+          get() {
+            const baseRefRx = this.refRx
+            const fieldRefRx = this.refRx.map(ref => ref.child(field))
+            return Object.defineProperties(fieldRefRx.flatMapLatest(values), {
+              question: { get() { return fields[field] } },
+              ref: { get() { return fieldRefRx } },
+              set: { value(val) { return fieldRefRx.then(ref => ref.set(val)) } },
+            })
+          },
+          set(val) { this.refRx.then(ref => ref.child(field).set(val)) },
+        }
+      }), {})
+
+  // Return a function that takes an Observable<FirebaseRef>
+  // and returns a model.
+  return refRx => {
+    const stream = refRx.flatMapLatest(values)
+    stream.refRx = refRx
+    Object.defineProperties(stream, props)
+    return stream
+  }
 }
